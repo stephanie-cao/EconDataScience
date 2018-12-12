@@ -1,0 +1,631 @@
+---
+title: "Olympics Data"
+author: "Stephanie Cao"
+date: "11/27/2018"
+output: html_document
+---
+
+```{r}
+#Set up
+library(tidyverse)
+library(car)
+library(AER)
+library(ggplot2)
+library(broom)
+library(stargazer)
+library(rsq) 
+library(foreign)
+library(gmodels)
+library(pROC)
+library(caret)
+library(Zelig)
+library(magrittr)
+olympics <- read.csv("athlete_events.csv")
+```
+
+
+Analysis on Women's Gymnastics
+```{r}
+#####Filter so that it's only women's gymnastics
+women_gymnastics <- olympics %>%
+  filter(Sport == "Gymnastics", Sex == "F")
+
+#####Countries and their medal count
+medal_wgymn <- women_gymnastics %>%
+  filter(!is.na(Medal))
+medal_wgymn %>%
+  group_by(Team) %>%
+  summarise(medal_count = n()) %>%
+  arrange(desc(medal_count))
+
+######All Women's Gymnastics Data:
+#How has the average height for female gymnasts changed over the years
+wgymnastics_height <- women_gymnastics %>%
+  group_by(Year) %>%
+  summarise(Average_Height = mean(Height, na.rm = TRUE))
+ggplot(data = wgymnastics_height, aes(x = Year, y=Average_Height)) + geom_point() + geom_smooth(method = "lm", formula = y~x) + labs(title = "Average Height for Female Gymnasts", x = "Year", y = "Average Height (cm)")
+#How has the average height changed for female gymnasts who've medalled
+wgym_height_medal <- medal_wgymn %>%
+  group_by(Year) %>%
+  summarise(Average_Height = mean(Height, na.rm = TRUE))
+ggplot(data = wgym_height_medal, aes(x = Year, y=Average_Height)) + geom_point() + geom_point() + geom_smooth(method = "lm", formula = y~x) + labs(title = "Average Height for Medalled Female Gymnasts", x = "Year", y = "Average Height (cm)")
+#Height for overall & those who medalled
+ggplot() + geom_point(data = wgym_height_medal, aes(x = Year, y=Average_Height), color = "red") + geom_smooth(data = wgym_height_medal, aes(x= Year, y = Average_Height), color = "red",method = "lm", formula = y~x, se=FALSE) + geom_point(data = wgymnastics_height, aes(x = Year, y=Average_Height), color = "blue") + geom_smooth(data = wgymnastics_height, aes(x= Year, y = Average_Height), color = "blue",method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Height for Female Gymnasts", x = "Year", y = "Average Height (cm)")
+
+
+
+#How has average age for female gymnasts changed over the years
+wgym_age <- women_gymnastics %>%
+  group_by(Year) %>%
+  summarise(Average_Age = mean(Age, na.rm = TRUE))
+ggplot(data = wgym_age, aes(x = Year, y=Average_Age)) + geom_point() + geom_point() + geom_smooth(method = "lm", formula = y~x) + labs(title = "Average Age for Female Gymnasts", x = "Year", y = "Average Age")
+#Now how has the average age changed for female gymnasts who've medalled
+wgym_age_medal <- medal_wgymn %>%
+  group_by(Year) %>%
+  summarise(Average_Age = mean(Age, na.rm = TRUE))
+ggplot(data = wgym_age_medal, aes(x = Year, y=Average_Age)) + geom_point() + labs(title = "Average Age for Medalled Female Gymnasts", x = "Year", y = "Average Age")
+#Overall and those who medalled
+ggplot() + geom_point(data = wgym_age_medal, aes(x = Year, y=Average_Age), color = "red") + geom_smooth(data = wgym_age_medal, aes(x= Year, y = Average_Age), color = "red",method = "lm", formula = y~x, se=FALSE) + geom_point(data = wgym_age, aes(x = Year, y=Average_Age), color = "blue") + geom_smooth(data = wgym_age, aes(x= Year, y = Average_Age), color = "blue",method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Age for Female Gymnasts", x = "Year", y = "Age")
+
+#How has average weight for female gymnasts changed over the years
+wgym_wt <- women_gymnastics %>%
+  group_by(Year) %>%
+  summarise(Average_Weight = mean(Weight, na.rm = TRUE))
+ggplot(data = wgym_wt, aes(x = Year, y=Average_Weight)) + geom_point() + geom_smooth(method = "lm", formula = y~x) + labs(title = "Average Weight for Female Gymnasts", x = "Year", y = "Average Weight (kg)")
+#Now how has the average age changed for female gymnasts who've medalled
+wgym_wt_medal <- medal_wgymn %>%
+  group_by(Year) %>%
+  summarise(Average_Weight = mean(Weight, na.rm = TRUE))
+ggplot(data = wgym_wt_medal, aes(x = Year, y=Average_Weight)) + geom_point() + geom_smooth(method = "lm", formula = y~x) + labs(title = "Average Weight for Medalled Female Gymnasts", x = "Year", y = "Average Weight (cm)")
+#Overall and those who medalled
+ggplot() + geom_point(data = wgym_wt_medal, aes(x = Year, y=Average_Weight), color = "red") + geom_smooth(data = wgym_wt_medal, aes(x= Year, y = Average_Weight), color = "red",method = "lm", formula = y~x, se=FALSE) + geom_point(data = wgym_wt, aes(x = Year, y=Average_Weight), color = "blue") + geom_smooth(data = wgym_wt, aes(x= Year, y = Average_Weight), color = "blue",method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Weight for Female Gymnasts", x = "Year", y = "Average Weight (kg)")
+
+#We see there's 2 chunks of data: prior to 1980 and post 1980 data. Because we are more interested with current data, we will only examine 1980+ data.
+post1980_wgym <- women_gymnastics %>%
+  filter(Year >= 1980)
+#Get rid of the NAs:
+post1980_wgym$Medal <- ifelse(is.na(post1980_wgym$Medal),0,post1980_wgym$Medal)
+post1980_wgym_medal <- post1980_wgym %>%
+  filter(!is.na(Medal))
+new <- na.omit(post1980_wgym)
+#Average features for each team:
+post1980_wgym %>%
+  group_by(Team) %>%
+  summarize(avg_ht = mean(Height, na.rm= TRUE), avg_wt = mean(Weight, na.rm= TRUE), avg_age = mean(Age, na.rm= TRUE))
+
+
+#0s and 1s for our logistic regression model:
+post1980_wgym$MedalYES <- ifelse(post1980_wgym$Medal ==0,0,1)
+#Filter only on the gymnasts who've medalled:
+medalled_gymnasts <- post1980_wgym %>%
+  filter(MedalYES == 1)
+#"Ideal" as in getting the avg features of gymnasts who've medalled
+ideal <- medalled_gymnasts %>%
+  group_by(Event) %>%
+  summarize(Average_Age = round(mean(Age, na.rm = TRUE),digits=1), Average_Ht = round(mean(Height, na.rm = TRUE), digits =1), Average_Wt = round(mean(Weight, na.rm = TRUE), digits=1))
+
+#How do the averages compare to Simone Biles?
+simone_biles <- medalled_gymnasts %>%
+  filter(Name == "Simone Arianne Biles")
+
+
+#Logistic Regression on Women's Gymnastics
+new <- na.omit(post1980_wgym)
+wg.logit <- glm(MedalYES ~ Year + Height + Weight + Age + Team, data = new, family = binomial(link = "logit"))
+summary(wg.logit)
+new$probability <- predict(wg.logit, type = "response")
+#Get ROC
+wgym.roc <- roc(new$MedalYES,new$probability)
+wgym.roc
+plot(wgym.roc)
+#Get AUC to see how accurate our model is
+auc(wgym.roc) #0.9136 ROC!!
+
+#Predicting Gymnasts
+#1) Who has a higher chance of winning in 2020, a 16 year gymnast with a height of 155, weight 50, from the US or the same but from China and Russia.
+pred.USG <- data.frame(Year = 2020, Height = 155, Weight = 50, Age = 16, Team = "United States")
+pred.ChinaG <- data.frame(Year = 2020, Height = 155, Weight = 50, Age = 16, Team = "China")
+pred.RussiaG <- data.frame(Year = 2020, Height = 155, Weight = 50, Age = 16, Team = "Russia")
+predict(wg.logit, newdata = pred.USG, type = "response") #0.415
+predict(wg.logit, newdata = pred.ChinaG, type = "response") #0.164
+predict(wg.logit, newdata = pred.RussiaG, type = "response") #0.295
+#The American gymnast, then Russia, then China
+
+#2) Do shorter gymnasts have a higher chance of winning?
+pred.shorter <- data.frame(Year = 2020, Height = 150, Weight = 50, Age = 16, Team = "United States")
+pred.taller <- data.frame(Year = 2020, Height = 165, Weight = 50, Age = 16, Team = "United States")
+pred.tallest <- data.frame(Year = 2020, Height = 195, Weight = 50, Age = 16, Team = "United States")
+predict(wg.logit, newdata = pred.shorter, type = "response") #0.376
+predict(wg.logit, newdata = pred.taller, type = "response") #0.494
+predict(wg.logit, newdata = pred.tallest, type = "response") #0.718
+#no! The taller gymnast actually has a higher chance
+
+###New Logistic Regression that includes the event (vault, uneven bars, balance beam, floor, all-around, team)
+
+wgEvent.logit <- glm(MedalYES ~ Year + Height + Weight + Age + Team + Event, data = new, family = binomial(link = "logit"))
+new$event_prob <- predict(wgEvent.logit, type = "response") 
+wgym.event_roc <- roc(new$MedalYES,new$event_prob)
+wgym.event_roc
+plot(wgym.event_roc)
+auc(wgym.event_roc) #0.9446 ROC!!
+
+#1) Do taller gymnasts have an advantage on Floor?
+pred.floorShorter <- data.frame(Year = 2020, Height = 150, Weight = 50, Age = 16, Team = "United States", Event = "Gymnastics Women's Floor Exercise")
+pred.floorTaller <- data.frame(Year = 2020, Height = 165, Weight = 50, Age = 16, Team = "United States", Event = "Gymnastics Women's Floor Exercise")
+pred.floorTallest <- data.frame(Year = 2020, Height = 195, Weight = 50, Age = 16, Team = "United States", Event = "Gymnastics Women's Floor Exercise")
+predict(wgEvent.logit, newdata = pred.floorShorter, type = "response") #0.236
+predict(wgEvent.logit, newdata = pred.floorTaller, type = "response") #0.351
+predict(wgEvent.logit, newdata = pred.floorTallest, type = "response") #0.625
+#Yes
+
+#2) Oksana Chusovitina competed in 2016 at the age of 41 in Vault. If she competed again in 2020 for Uzbekistan, what are her chances of winning a medal?
+chusovitina_2020 <- data.frame(Year = 2020, Height = 153, Weight = 44, Age = 45, Team = "Uzbekistan", Event = "Gymnastics Women's Horse Vault")
+predict(wgEvent.logit, newdata = chusovitina_2020, type = "response") #4.853308e-09
+
+#3) If Simone Biles returns to the Olympics in 2020, what are her chances of winning?
+bilesVault2020 <- data.frame(Year = 2020, Height = 143, Weight = 47, Age = 23, Team = "United States", Event = "Gymnastics Women's Horse Vault")
+predictBilesV <- predict(wgEvent.logit, newdata = bilesVault2020, type = "response") #0.317
+
+bilesBeam2020 <- data.frame(Year = 2020, Height = 143, Weight = 47, Age = 23, Team = "United States", Event = "Gymnastics Women's Balance Beam")
+predictBilesBB <-predict(wgEvent.logit, newdata = bilesBeam2020, type = "response") #0.27
+
+bilesFloor2020 <- data.frame(Year = 2020, Height = 143, Weight = 47, Age = 23, Team = "United States", Event = "Gymnastics Women's Floor Exercise")
+predictBilesF <-predict(wgEvent.logit, newdata = bilesFloor2020, type = "response") #0.27
+
+bilesBars2020 <- data.frame(Year = 2020, Height = 143, Weight = 47, Age = 23, Team = "United States", Event = "Gymnastics Women's Uneven Bars")
+predictBilesUB <-predict(wgEvent.logit, newdata = bilesBars2020, type = "response") #0.28
+
+bilesAA2020 <- data.frame(Year = 2020, Height = 143, Weight = 47, Age = 23, Team = "United States", Event = "Gymnastics Women's Individual All-Around")
+predictBilesAA <-predict(wgEvent.logit, newdata = bilesAA2020, type = "response") #0.25
+biles2020 <- data.frame(All_Around = round(predictBilesAA, digits = 3), Vault = round(predictBilesV,digits = 3), Bars = round(predictBilesUB, digits = 3), Beam = round(predictBilesBB,digits = 3), Floor = round(predictBilesF, digits =3))
+biles2020
+        
+#How has average weight for female beam gymnasts changed over the years
+balance_beam <- post1980_wgym %>%
+   filter(Event == "Gymnastics Women's Balance Beam")
+balance_beam_wt <- balance_beam %>%
+  group_by(Year) %>%
+  summarise(Average_Weight = mean(Weight, na.rm = TRUE))
+ggplot(data = balance_beam_wt, aes(x = Year, y=Average_Weight)) + geom_point()
+#Now how has the average age changed for female gymnasts who've medalled
+balance_beam_wt_medal <- post1980_wgym_medal %>%
+  group_by(Year) %>%
+  summarise(Average_Weight = mean(Weight, na.rm = TRUE))
+ggplot(data = balance_beam_wt_medal, aes(x = Year, y=Average_Weight)) + geom_point()
+
+
+#Do gymnasts do better when they've had more Olympic experience?
+gymnasts_medals <- post1980_wgym %>%
+  group_by(Name, Year) %>%
+  summarise(Total_Medals = sum(MedalYES)) %>%
+  arrange(Name,Year)
+multiple_olympics_gym <- gymnasts_medals[duplicated(gymnasts_medals$Name)| duplicated(gymnasts_medals$Name, fromLast = TRUE),]
+#Add new column that displays the number of times that gymnast went to the Olympics:
+multiple_olympics_gym$Olympic_Number <- NA
+multiple_olympics_gym$Olympic_Number[1]=1
+for (i in 2:nrow(multiple_olympics_gym)) {
+  if (multiple_olympics_gym[i-1,"Name"] == multiple_olympics_gym[i,"Name"]) {
+    multiple_olympics_gym[i, "Olympic_Number"] = multiple_olympics_gym[i-1, "Olympic_Number"] + 1}else{
+      multiple_olympics_gym[i, "Olympic_Number"] = 1}
+}
+multiple_olympics_gym
+#Olympic game number vs. Number of medals earned in that Olympic
+num_vs_gymMedals <- multiple_olympics_gym %>%
+  group_by(Olympic_Number) %>%
+  summarise(Avg_Medals = round(mean(Total_Medals,na.rm = TRUE),digits = 3), Num_Gymnasts = n())
+
+ggplot(data = num_vs_gymMedals, aes(x = Olympic_Number, y = Avg_Medals)) + geom_point() + geom_smooth(method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Number of Medals for Number of Times at the Olympics", x = "Olympic Number", y = "Average Number of Medals") + scale_x_continuous(breaks = seq(1996,2016,4)) + scale_x_discrete(limits = c(1,2,3,4,5,6,7))
+
+#Jitter plot of results:
+ggplot(data = multiple_olympics_gym, aes(x = Olympic_Number, y = Total_Medals, group = 1)) + geom_jitter() 
+```
+
+
+Women's Swimming
+```{r}
+####Women's Swimming
+swimmingW <- olympics %>%
+  filter(Sport == "Swimming", Sex == "F")
+#Set up for logistic regression:
+swimmingW$medalled <- ifelse(!is.na(swimmingW$Medal),1,0)
+
+#Average Heights of Female swimmers and how how it has changed over the years
+swimmingW_ht <- swimmingW %>%
+  group_by(Year) %>%
+  summarise(Average_Height = mean(Height, na.rm = TRUE))
+swimmingW_htMedalled <- swimmingW %>%
+  filter(medalled == 1)%>%
+  group_by(Year) %>%
+  summarise(Average_Height = mean(Height, na.rm = TRUE))
+ggplot() + geom_point(data = swimmingW_htMedalled, aes(x = Year, y=Average_Height), color = "red") + geom_smooth(data = swimmingW_htMedalled, aes(x= Year, y = Average_Height), color = "red",method = "lm", formula = y~x, se=FALSE) + geom_point(data = swimmingW_ht, aes(x = Year, y=Average_Height), color = "blue") + geom_smooth(data = swimmingW_ht, aes(x= Year, y = Average_Height), color = "blue",method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Height for Female Swimmers", x = "Year", y = "Height (cm)")
+
+ggplot(data = swimmingW_ht, aes(x = Year, y=Average_Height)) + geom_point()
+#Conclusion: Average height has increased over the years. Average height for medalled swimmers is taller for most years.
+
+#Average Weight of Female swimmers
+swimmingW_wt <- swimmingW %>%
+  group_by(Year) %>%
+  summarise(Average_Weight = mean(Weight, na.rm = TRUE))
+#For medalled swimmers
+swimmingW_wtMedalled <- swimmingW %>%
+  filter(medalled == 1)%>%
+  group_by(Year) %>%
+  summarise(Average_Weight = mean(Weight, na.rm = TRUE))
+ggplot() + geom_point(data = swimmingW_wtMedalled, aes(x = Year, y=Average_Weight), color = "red") + geom_smooth(data = swimmingW_wtMedalled, aes(x= Year, y = Average_Weight), color = "red",method = "lm", formula = y~x, se=FALSE) + geom_point(data = swimmingW_wt, aes(x = Year, y=Average_Weight), color = "blue") + geom_smooth(data = swimmingW_wt, aes(x= Year, y = Average_Weight), color = "blue",method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Weight for Female Swimmers", x = "Year", y = "Weight (kg)")
+
+
+#Average Age of Female swimmers
+swimmingW_age <- swimmingW %>%
+  group_by(Year) %>%
+  summarise(Average_Age = mean(Age, na.rm = TRUE))
+#For medalled swimmers
+swimmingW_ageMedalled <- swimmingW %>%
+  filter(medalled == 1)%>%
+  group_by(Year) %>%
+  summarise(Average_Age = mean(Age, na.rm = TRUE))
+ggplot() + geom_point(data = swimmingW_ageMedalled, aes(x = Year, y=Average_Age), color = "red") + geom_smooth(data = swimmingW_ageMedalled, aes(x= Year, y = Average_Age), color = "red",method = "lm", formula = y~x, se=FALSE) + geom_point(data = swimmingW_age, aes(x = Year, y=Average_Age), color = "blue") + geom_smooth(data = swimmingW_age, aes(x= Year, y = Average_Age), color = "blue",method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Age for Female Swimmers", x = "Year", y = "Age")
+
+
+#Logistic regression model on female swimemrs
+swimmingW.logit <- glm(medalled ~ Height + Weight + Age + NOC + Event, data = swimmingW, family = binomial(link = "logit"))
+#Get rid of NAs:
+swimmingW$Medal <- ifelse(is.na(swimmingW$Medal),0,swimmingW$Medal)
+#In new data frame - don't want to mess with original data
+newswimmingW <- na.omit(swimmingW)
+newswimmingW$probability <- predict(swimmingW.logit, type = "response")
+swimmingW.roc <- roc(newswimmingW$medalled,newswimmingW$probability)
+swimmingW.roc #0.89 AUC
+
+
+#What are Katie Ledecky's chances of winning the 200m Freestyle in 2020?
+#200m freestyle
+swimmingW %>%
+  filter(Year == 2016) %>%
+  arrange(Name)
+katie_ledecky <-swimmingW %>%
+  filter(Name == 'Kathleen Genevieve "Katie" Ledecky')
+
+ledecky200mF_2020 <- data.frame(Height = 183,Weight = 73, Age = 22, NOC = "USA", Event = "Swimming Women's 200 metres Freestyle")
+predict(swimmingW.logit,ledecky200mF_2020,type = "response") #0.6313179
+
+
+#What are Katinka Hosszu's chances of winning 100m backstroke in 2020
+katinka_hosszu <-swimmingW %>%
+  filter(Name == "Katinka Hossz") 
+
+katinka_hosszu %>%
+  group_by(Year) %>%
+  summarize(Num_Events = n(), Medal_Count = sum(medalled))
+hosszu100mBack <- data.frame(Height = 175, Weight = 68, Age = 31, NOC = "HUN", Event = "Swimming Women's 100 metres Backstroke")
+predict(swimmingW.logit,hosszu100mBack,type = "response") #0.06798476
+hosszu100mBackUS <- data.frame(Height = 175, Weight = 68, Age = 31, NOC = "USA", Event = "Swimming Women's 100 metres Backstroke")
+predict(swimmingW.logit,hosszu100mBackUS,type = "response") #0.62
+hosszu200mInd <- data.frame(Height = 175, Weight = 68, Age = 31, NOC = "HUN", Event = "Swimming Women's 200 metres Individual Medley")
+hosszu200mIndUS <- data.frame(Height = 175, Weight = 68, Age = 31, NOC = "USA", Event = "Swimming Women's 200 metres Individual Medley")
+predict(swimmingW.logit,hosszu200mInd,type = "response") #0.08
+predict(swimmingW.logit, hosszu200mIndUS,type = "response" ) #65%
+
+
+#Does Olympic experience effect performance for women's swimming? 
+womens_swimming_medals <- swimmingW %>%
+  group_by(Name, Year) %>%
+  summarise(Total_Medals = sum(medalled)) %>%
+  arrange(Name,Year)
+mult_olympics_wswimming <-womens_swimming_medals[duplicated(womens_swimming_medals$Name)| duplicated(womens_swimming_medals$Name, fromLast = TRUE),]
+#New column for number of Olympic game
+mult_olympics_wswimming$Olympic_Number <- NA
+mult_olympics_wswimming$Olympic_Number[1]=1
+for (i in 2:nrow(mult_olympics_wswimming)) {
+  if (mult_olympics_wswimming[i-1,"Name"] == mult_olympics_wswimming[i,"Name"]) {
+    mult_olympics_wswimming[i, "Olympic_Number"] = mult_olympics_wswimming[i-1, "Olympic_Number"] + 1}else{
+      mult_olympics_wswimming[i, "Olympic_Number"] = 1}
+}
+mult_olympics_wswimming
+
+#Olympic game number vs. Number of medals earned in that Olympic
+num_vs_WSmedals <- mult_olympics_wswimming %>%
+  group_by(Olympic_Number) %>%
+  summarise(Average_Medals = round(mean(Total_Medals,na.rm = TRUE), digits = 3),Num_Swimmers = n())
+num_vs_WSmedals
+
+ggplot(data = num_vs_WSmedals, aes(x=Olympic_Number, y =Average_Medals)) + geom_point() + labs(title = "Average Number of Medals for Number of Times at the Olympics", x = "Olympic Number", y = "Average Number of Medals") + scale_x_discrete(limits = c(1,2,3,4,5,6))
+```
+
+Men's Swimming
+``` {r}
+swimmingM <- olympics %>%
+  filter(Sport == "Swimming", Sex == "M")
+swimmingM$medalled <- ifelse(!is.na(swimmingM$Medal),1,0)
+
+#Average Heights of Male swimmers
+swimmingM_ht <- swimmingM %>%
+  group_by(Year) %>%
+  summarise(Average_Height = mean(Height, na.rm = TRUE))
+ggplot(data = swimmingM_ht, aes(x = Year, y=Average_Height)) + geom_point()
+swimmingM_htMedalled <- swimmingM %>%
+  filter(medalled == 1)%>%
+  group_by(Year) %>%
+  summarise(Average_Height = mean(Height, na.rm = TRUE))
+
+ggplot() + geom_point(data = swimmingM_htMedalled, aes(x = Year, y=Average_Height), color = "red") + geom_smooth(data = swimmingM_htMedalled, aes(x= Year, y = Average_Height), color = "red",method = "lm", formula = y~x, se=FALSE) + geom_point(data = swimmingM_ht, aes(x = Year, y=Average_Height), color = "blue") + geom_smooth(data = swimmingM_ht, aes(x= Year, y = Average_Height), color = "blue",method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Height for Male Swimmers", x = "Year", y = "Height (cm)")
+
+#Average height has increased over the years
+
+#Average Weight of Male swimmers
+swimmingM_wt <- swimmingM %>%
+  group_by(Year) %>%
+  summarise(Average_Weight = mean(Weight, na.rm = TRUE))
+
+swimmingM_wtMedalled <- swimmingM %>%
+  filter(medalled == 1)%>%
+  group_by(Year) %>%
+  summarise(Average_Weight = mean(Weight, na.rm = TRUE))
+ggplot() + geom_point(data = swimmingM_wtMedalled, aes(x = Year, y=Average_Weight), color = "red") + geom_smooth(data = swimmingM_wtMedalled, aes(x= Year, y = Average_Weight), color = "red",method = "lm", formula = y~x, se=FALSE) + geom_point(data = swimmingM_wt, aes(x = Year, y=Average_Weight), color = "blue") + geom_smooth(data = swimmingM_wt, aes(x= Year, y = Average_Weight), color = "blue",method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Weight for Male Swimmers", x = "Year", y = "Weight (kg)")
+
+
+#Average Age of Male swimmers
+swimmingM_age <- swimmingM %>%
+  group_by(Year) %>%
+  summarise(Average_Age = mean(Age, na.rm = TRUE))
+#For medalled swimmers
+swimmingM_ageMedalled <- swimmingM %>%
+  filter(medalled == 1)%>%
+  group_by(Year) %>%
+  summarise(Average_Age = mean(Age, na.rm = TRUE))
+ggplot() + geom_point(data = swimmingM_ageMedalled, aes(x = Year, y=Average_Age), color = "red") + geom_smooth(data = swimmingM_ageMedalled, aes(x= Year, y = Average_Age), color = "red",method = "lm", formula = y~x, se=FALSE) + geom_point(data = swimmingM_age, aes(x = Year, y=Average_Age), color = "blue") + geom_smooth(data = swimmingM_age, aes(x= Year, y = Average_Age), color = "blue",method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Age for Male Swimmers", x = "Year", y = "Age")
+
+
+#Logistic Regression Model for male swimmers
+swimmingM.logit <- glm(medalled ~ Height + Weight + Age + NOC + Event, data = swimmingM, family = binomial(link = "logit"))
+#Get rid of the NAs:
+swimmingM$Medal <- ifelse(is.na(swimmingM$Medal),0,swimmingM$Medal)
+#In new data frame - don't want to mess with original data
+newSwimmingM <- na.omit(swimmingM)
+newSwimmingM$probability <- predict(swimmingM.logit, type = "response")
+swimmingM.roc <- roc(newSwimmingM$medalled,newSwimmingM$probability)
+swimmingM.roc #AUC = 0.8973
+plot(swimmingM.roc)
+
+#If Michael Phelps came out of retirement, what are his chances of winning the 100m butterfly in 2020 ?
+phelps100mB_2020 <- data.frame(Height = 193, Weight = 88, Age = 35, NOC = "USA", Event = "Swimming Men's 100 metres Butterfly")
+predict(swimmingM.logit,phelps100mB_2020, type = "response") #0.711
+#What are Michael Phelp's chances of medalling in that same event in 2016
+phelps100mB_2016 <- data.frame(Height = 193, Weight = 88, Age = 31, NOC = "USA", Event = "Swimming Men's 100 metres Butterfly")
+predict(swimmingM.logit,phelps100mB_2016, type = "response") #0.70
+
+#Joseph Schooling's chances of winning again in 2020 (100m butterfly - the event that he beat Micahel Phelps)
+schooling100mB_2020 <- data.frame(Height = 184, Weight = 74, Age = 25, NOC = "SGP", Event = "Swimming Men's 100 metres Butterfly")
+predict(swimmingM.logit,schooling100mB_2020, type = "response") #0.011
+#Joseph Schooling's probability of winning a medal in 2016
+schooling100mB_2016 <- data.frame(Height = 184, Weight = 74, Age = 21, NOC = "SGP", Event = "Swimming Men's 100 metres Butterfly")
+predict(swimmingM.logit,schooling100mB_2016, type="response") #0.01
+
+#Joseph Schooling is trained in the US. What if he was American?
+schooling100mB_2016US <- data.frame(Height = 184, Weight = 74, Age = 21, NOC = "USA", Event = "Swimming Men's 100 metres Butterfly")
+predict(swimmingM.logit,schooling100mB_2016US, type="response") #0.57
+
+schooling100mB_2020US <- data.frame(Height = 184, Weight = 74, Age = 25, NOC = "USA", Event = "Swimming Men's 100 metres Butterfly")
+predict(swimmingM.logit,schooling100mB_2020US, type = "response") #0.59
+#Conclusion: Country plays a huge factor in our model!
+
+#Find the oldest swimmer
+swimmingM %>%
+  arrange(desc(Age))
+swimmingM %>%
+  group_by(Age) %>%
+  summarize(Number = n())
+#Why our model places a lot of weight on country
+#Create a table that shows country, their total medal count, the number of Olympics they participated in, and the average number of medals per game
+mswimming_country <- swimmingM %>%
+  group_by(Team) %>%
+  summarise(Medal_Count =sum(medalled), Num_Olympic_Games = n_distinct(Year), Avg_Medals_per_Game = Medal_Count/Num_Olympic_Games)%>%
+  arrange(desc(Medal_Count))
+
+
+#Does Olympic experience effect performance for men's swimming? 
+mens_swimming_medals <- swimmingM %>%
+  group_by(Name, Year) %>%
+  summarise(Total_Medals = sum(medalled)) %>%
+  arrange(Name,Year)
+mult_olympics_mswimming <-mens_swimming_medals[duplicated(mens_swimming_medals$Name)| duplicated(mens_swimming_medals$Name, fromLast = TRUE),]
+#New column for number of Olympic game
+mult_olympics_mswimming$Olympic_Number <- NA
+mult_olympics_mswimming$Olympic_Number[1]=1
+for (i in 2:nrow(mult_olympics_mswimming)) {
+  if (mult_olympics_mswimming[i-1,"Name"] == mult_olympics_mswimming[i,"Name"]) {
+    mult_olympics_mswimming[i, "Olympic_Number"] = mult_olympics_mswimming[i-1, "Olympic_Number"] + 1}else{
+      mult_olympics_mswimming[i, "Olympic_Number"] = 1}
+}
+mult_olympics_mswimming
+
+#Olympic game number vs. Number of medals earned in that Olympic
+num_vs_MSmedals <- mult_olympics_mswimming %>%
+  group_by(Olympic_Number) %>%
+  summarise(Average_Medals = mean(Total_Medals,na.rm = TRUE),Num_Swimmers = n())
+num_vs_MSmedals
+
+#Graph:
+ggplot(data = num_vs_MSmedals, aes(x=Olympic_Number, y =Average_Medals)) + geom_point() + labs(title = "Average Number of Medals for Number of Times at the Olympics", x = "Olympic Number", y = "Average Number of Medals") + scale_x_discrete(limits = c(1,2,3,4,5,6))
+
+ggplot(data = mult_olympics_mswimming, aes(x = Olympic_Number, y = Total_Medals, group = 1, color = Olympic_Number)) + geom_jitter() + labs(title = "Number of Olympics and Medals Earned", x = "Olympic Number", y = "Number of Medals") + scale_x_continuous(breaks = seq(0,6,1)) + scale_y_continuous(breaks = seq(0,8,1)) + theme(legend.position = "none")
+```
+
+Women's Beach Volleyball
+```{r}
+bvF <- olympics %>%
+  filter(Sport == "Beach Volleyball", Sex == "F")
+
+#Set up for logistic regression
+bvF$medalled <- ifelse(!is.na(bvF$Medal),1,0)
+#How has average height changed for women?
+bvF_ht <- bvF %>%
+  group_by(Year) %>%
+  summarise(Average_Height = mean(Height, na.rm = TRUE))
+ggplot(data = bvF_ht, aes(x = Year, y=Average_Height)) + geom_point() + geom_smooth(method = "lm", formula = y~x) + labs(title = "Average Height for Female Beach Volleyball Players", x = "Year", y = "Average Height (cm)") + scale_x_continuous(breaks = seq(1996,2016,4))
+
+bvF %>%
+  filter(NOC == "USA")
+bvF %>%
+  filter(medalled ==1)
+#The average height for beach volleyball players have increased for women
+lm_wbv <- lm(Average_Height ~ Year, data= bvF_ht)
+summary(lm_wbv)
+#Average height for female beach volleyball players who medalled
+bvF_ht_medalled <- bvF %>%
+  filter(medalled ==1)%>%
+  group_by(Year) %>%
+  summarise(Average_Height = mean(Height, na.rm = TRUE))
+bvF_ht_medalled
+#Average height graph for those who medalled
+bvF_ht_medalled_graph<-ggplot(data = bvF_ht_medalled, aes(x = Year, y=Average_Height)) + geom_point() + geom_smooth(method = "lm", formula = y~x) + labs(title = "Average Height for Medalled Female Beach Volleyball Players", x = "Year", y = "Average Height (cm)") + scale_x_continuous(breaks = seq(1996,2016,4))
+bvF_ht_medalled_graph
+#Plots both overall height and those who medalled over year
+compare_wbvHeights <- ggplot() + geom_point(data = bvF_ht,aes(x = Year, y=Average_Height), color="blue") + geom_smooth(data = bvF_ht,aes(x = Year, y=Average_Height), color = "blue",method = "lm", formula = y~x, se=FALSE) + geom_point(data = bvF_ht_medalled,aes(x = Year, y=Average_Height), color="red") + geom_smooth(data = bvF_ht_medalled,aes(x = Year, y=Average_Height), color = "red", method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Height for Female Beach Volleyball Players", x = "Year", y = "Average Height (cm)") + scale_x_continuous(breaks = seq(1996,2016,4)) + theme(legend.position = "bottom")
+compare_wbvHeights
+
+#Logisitc regression model
+bvF.logit <- glm(medalled ~ Height + Age + Weight + NOC, data = bvF, family = binomial(link = "logit"))
+
+#Get rid of NAs:
+bvF$Medal <- ifelse(is.na(bvF$Medal),0,bvF$Medal)
+#In new data frame - don't want to mess with original data
+newbvF <- na.omit(bvF)
+newbvF$probability <- predict(bvF.logit, type = "response")
+bvF.roc <- roc(newbvF$medalled,newbvF$probability)
+auc(bvF.roc) #0.93
+plot(bvF.roc)
+
+
+#Tall v. Short on medals
+bvF$AboveAvgHeight <- ifelse(bvF$Height >= mean(bvF$Height,na.rm = TRUE),"Yes","No")
+table(bvF$AboveAvgHeight, bvF$medalled)
+#0.1219512 Short who medalled
+#0.1360544 Tall who medalled
+
+#What are Kerri Walsh chances of winning the next Olympics in 2020
+kerri_walsh <- bvF %>%
+  filter(Name == "Kerri Lee Walsh Jennings")
+Walsh_2020 <- data.frame(Height = 191, Age = 42, Weight = 73, NOC = "USA")
+predict(bvF.logit,Walsh_2020,type = "response") #0.686
+
+misty_may <- bvF %>%
+  filter(Name == "Misty Erie May-Treanor")
+
+
+#Each Country can send multiple pairs to the Olympics. Do first teams perform better?
+first_teams <- grep("-1", bvF$Team, value =TRUE)
+second_teams <- grep("-2", bvF$Team, value =TRUE)
+firstTeamsWBV <- bvF %>%
+  filter(Team %in% first_teams)
+firstTeamWBVMedals <- firstTeamsWBV %>%
+  group_by(Medal) %>%
+  summarize(Count = n())
+
+secondTeamsWBV <- bvF %>%
+  filter(Team %in% second_teams)
+secondTeamWBVMedals <- secondTeamsWBV %>%
+  group_by(Medal) %>%
+  summarize(Count = n())
+
+firstTeamsWBV %>%
+  summarize(medal_count = sum(medalled), average = medal_count/n()) #26 medals, 0.325 average
+secondTeamsWBV %>%
+  summarize(medal_count = sum(medalled), average = medal_count/n()) #10, 0.125 average	
+
+#Does Olympic experience effect performance for women's beach volleyball? 
+wbv_medals <- bvF %>%
+  group_by(Name, Year) %>%
+  summarise(Total_Medals = sum(medalled)) %>%
+  arrange(Name,Year)
+mult_olympics_wbv <-wbv_medals[duplicated(wbv_medals$Name)| duplicated(wbv_medals$Name, fromLast = TRUE),]
+#New column for number of Olympic game
+mult_olympics_wbv$Olympic_Number <- NA
+mult_olympics_wbv$Olympic_Number[1]=1
+for (i in 2:nrow(mult_olympics_wbv)) {
+  if (mult_olympics_wbv[i-1,"Name"] == mult_olympics_wbv[i,"Name"]) {
+    mult_olympics_wbv[i, "Olympic_Number"] = mult_olympics_wbv[i-1, "Olympic_Number"] + 1}else{
+      mult_olympics_wbv[i, "Olympic_Number"] = 1}
+}
+mult_olympics_wbv
+
+#Olympic game number vs. Number of medals earned in that Olympic
+num_vs_WBVmedals <- mult_olympics_wbv %>%
+  group_by(Olympic_Number) %>%
+  summarise(Average_Medals = round(mean(Total_Medals,na.rm = TRUE),digits =  2),Num_Athletes = n())
+ggplot(data = num_vs_WBVmedals, aes(x=Olympic_Number, y =Average_Medals)) + geom_point() + labs(title = "Average Number of Medals for Number of Times at the Olympics", x = "Olympic Number", y = "Average Number of Medals") + scale_x_discrete(limits = c(1,2,3,4,5,6))
+```
+
+Men's Beach Volleyball
+``` {r}
+#####Men's Beach Volleyball
+bvM <- olympics %>%
+  filter(Sport == "Beach Volleyball", Sex == "M")
+#Set up for logisitic regression model
+bvM$medalled <- ifelse(!is.na(bvM$Medal),1,0)
+
+#How has average height for men's beach volleyball changed over the years?
+bvM_ht <- bvM %>%
+  group_by(Year) %>%
+  summarise(Average_Height = mean(Height, na.rm = TRUE))
+ggplot(data = bvM_ht, aes(x = Year, y=Average_Height)) + geom_point()
+bvM_ht_medalled <- bvM %>%
+  filter(medalled ==1)%>%
+  group_by(Year) %>%
+  summarise(Average_Height = mean(Height, na.rm = TRUE))
+
+ggplot() + geom_point(data = bvM_ht,aes(x = Year, y=Average_Height), color="blue") + geom_smooth(data = bvM_ht,aes(x = Year, y=Average_Height), color = "blue",method = "lm", formula = y~x, se=FALSE) + geom_point(data = bvM_ht_medalled,aes(x = Year, y=Average_Height), color="red") + geom_smooth(data = bvM_ht_medalled,aes(x = Year, y=Average_Height), color = "red", method = "lm", formula = y~x, se=FALSE) + labs(title = "Average Height for Male Beach Volleyball Players", x = "Year", y = "Average Height (cm)") + scale_x_continuous(breaks = seq(1996,2016,4)) + theme(legend.position = "bottom")
+
+
+#Logistic regression model
+bvM.logit <- glm(medalled ~ Height + Age + Weight + NOC, data = bvM, family = binomial(link = "logit"))
+#Get rid of NAs:
+bvM$Medal <- ifelse(is.na(bvM$Medal),0,bvM$Medal)
+#In new data frame - don't want to mess with original data
+newbvM <- na.omit(bvM)
+newbvM$probability <- predict(bvM.logit, type = "response")
+bvM.roc <- roc(newbvM$medalled,newbvM$probability)
+bvM.roc #0.86 AUC
+
+#Tall v. Short on medals
+bvM$AboveAvgHeight <- ifelse(bvM$Height >= mean(bvM$Height,na.rm = TRUE),"Yes","No")
+table(bvM$AboveAvgHeight, bvM$medalled)
+#Short 0.1290323
+#Tall 0.1083333
+
+#What are Alison Cerutti's chances of winning in 2020?
+Cerutti_2020 <- data.frame(Height = 203, Age = 34, Weight = 106, NOC = "BRA")
+predict(bvF.logit,Cerutti_2020,type = "response") #0.8967019
+predict(bvF.logit,Cerutti_2020,type = "response")
+#If he were American, his chances decrease. Therefore, our model predicts that for Men's beach volleyball, a Brazillian athlete has a higher chance of winning
+Cerutti_2020US <- data.frame(Height = 203, Age = 34, Weight = 106, NOC = "USA")
+predict(bvF.logit,Cerutti_2020US,type = "response") #0.873
+
+#Does Olympic experience effect performance for men's beach volleyball? 
+mbv_medals <- bvM %>%
+  group_by(Name, Year) %>%
+  summarise(Total_Medals = sum(medalled)) %>%
+  arrange(Name,Year)
+mult_olympics_mbv <-mbv_medals[duplicated(mbv_medals$Name)| duplicated(mbv_medals$Name, fromLast = TRUE),]
+#New column for number of Olympic game
+mult_olympics_mbv$Olympic_Number <- NA
+mult_olympics_mbv$Olympic_Number[1]=1
+for (i in 2:nrow(mult_olympics_mbv)) {
+  if (mult_olympics_mbv[i-1,"Name"] == mult_olympics_mbv[i,"Name"]) {
+    mult_olympics_mbv[i, "Olympic_Number"] = mult_olympics_mbv[i-1, "Olympic_Number"] + 1}else{
+      mult_olympics_mbv[i, "Olympic_Number"] = 1}
+}
+mult_olympics_mbv
+
+
+#Olympic game number vs. Number of medals earned in that Olympic
+num_vs_MBVmedals <- mult_olympics_mbv %>%
+  group_by(Olympic_Number) %>%
+  summarise(Average_Medals = round(mean(Total_Medals,na.rm = TRUE),digits=2),Num_Athletes = n())
+
+ggplot(data = num_vs_MBVmedals, aes(x=Olympic_Number, y =Average_Medals)) + geom_point() + labs(title = "Average Number of Medals for Number of Times at the Olympics", x = "Olympic Number", y = "Average Number of Medals") + scale_x_discrete(limits = c(1,2,3,4,5,6))
+
+#Wanted to use a boxplot to show distribution, but the majority of the Olympians do not end up medalling; therefore, the boxplot does not reveal any additional, useful information
+boxplot(Total_Medals ~ Olympic_Number, data = mult_olympics_mbv, main = "Olympic Game Number and Number of Medals", xlab = "Olympic Number", ylab = "Number of Medals")
+
+```
+

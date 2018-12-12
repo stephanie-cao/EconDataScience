@@ -1,0 +1,251 @@
+---
+title: "Hannah’s Analysis"
+author: "Hannah Koschmeder"
+date: "11/29/2018"
+output: html_document
+---
+
+```{r, message=F, warning=F}
+library(tidyverse)
+library(car)
+library(AER)
+library(ggplot2)
+library(broom)
+library(stargazer)
+library(rsq) 
+library(foreign)
+library(gmodels)
+library(pROC)
+library(caret)
+library(readxl)
+library(plyr)
+library(dplyr)
+library(bestglm)
+library(broom)
+library(dotwhisker)
+library(bestglm)
+library(ModelMetrics)
+```
+
+
+```{r}
+#reading in olympic data
+olympics <- read_csv("athlete_events.csv")
+#world population data
+worldpops <- data.frame(read_xlsx("WPP.xlsx", sheet="ESTIMATES", skip=16))
+worldpops <- worldpops[, !names(worldpops) %in% c("Index", "Variant", "Notes")]
+worldpops <- worldpops[-c(1:14),c(1,2, seq(5, 67, 4))]
+names(worldpops)[1] <- "Country"
+
+#country codes and abbreviations
+countrycodes <- data.frame(read_excel("CountryCodes.xlsx", sheet = "Sheet1"))
+countrycodes <- countrycodes[,c("Country.Code", "ISO3.digit.Alpha")]
+
+
+#adding the country codes to world populations
+worldpops_new <- left_join(countrycodes, worldpops, by = c("Country.Code" = "Country.code"))
+#worldpops_new <- worldpops_new[,-1]
+names(worldpops_new)[2] <- "NOC"
+
+#tidying the world populations because years were columns instead of their own variable
+worldpops_new <- gather(worldpops_new, key=Year, value= Population, names(worldpops_new)[4:19], na.rm = T)
+
+#converting the years to numbers
+worldpops_new$Year <- substr(worldpops_new$Year, 2, 5)
+worldpops_new$Year <- as.numeric(as.character(worldpops_new$Year))
+
+#joining olympic data with their country's population in that year
+olympics_new <- data.frame(left_join(olympics, worldpops_new, by = c("NOC", "Year")))
+#subsetting by Summer Olypics and available population data (1950-2015)
+olympics_final <- olympics_new %>%
+  subset(Year>1950&Year<2015& Season=="Summer")
+
+#finding problematically empty population data and removing it from the full set
+problem_children <- olympics_new %>%
+  subset(Year>1950&Year<2015& Season=="Summer"&is.na(Country))
+olympics_final <- olympics_final[!(is.na(olympics_final$Country)),]
+
+# gdp
+gdppercapita <- read_csv("gdppercapita.csv")
+gdppercapita
+
+# governmentfunded
+# corruption
+# population density
+# availability of facilities
+
+```
+
+
+
+```{r}
+#Number of Medals by Country
+medal_count1 <- olympics_final %>%
+  group_by(NOC, Year, Population) %>%
+  dplyr::summarize(Gold=sum(Medal=="Gold"&!is.na(Medal)),
+         Silver=sum(Medal=="Silver"&!is.na(Medal)),
+         Bronze=sum(Medal=="Bronze"&!is.na(Medal)),
+         Total=sum(!is.na(Medal)))%>%
+  arrange(Year,NOC)
+
+medal_count1 <- medal_count1 %>%
+  group_by(NOC) %>%
+  arrange(NOC,Year) %>%
+  dplyr::mutate(lagG=lag(Gold, order_by = Year), 
+                lagS=lag(Silver, order_by = Year),
+                lagB=lag(Bronze, order_by = Year),
+                lagT=lag(Total, order_by=Year),
+                lagG2=lag(Gold,2, order_by = Year), 
+                lagS2=lag(Silver,2, order_by = Year),
+                lagB2=lag(Bronze,2, order_by = Year),
+                lagT2=lag(Total, 2, order_by=Year))
+
+inconsistent_medals <- (medal_count1 %>%
+  filter(Year==2012) %>%
+  select(NOC,Gold, Silver, Bronze, Total) %>%
+  arrange(desc(Gold), desc(Silver), desc(Bronze))) 
+  
+
+#Number of Medals Available Per Year
+medal_count <- medal_count1 %>%
+  group_by(Year) %>%
+  dplyr::mutate(Avail_Medals = sum(Total)) %>%
+  arrange(Year,NOC)
+```
+
+
+#Visualize Summarized Data
+
+```{r}
+ggplot(medal_count, aes(y=Total,group=Year)) + geom_boxplot()
+ggplot(medal_count, aes(Total)) + geom_histogram() + facet_wrap("Year")
+medal_count[medal_count$Total>200,]
+summary(medal_count$Total)
+table(medal_count$Total)
+```
+
+
+
+#Models
+
+```{r}
+
+m1 <- lm(Total~log(Population), medal_count)
+summary(m1)
+residualPlots(m1)
+m2 <- lm(Total~NOC, medal_count)
+summary(m2)
+residualPlot(m2)
+m3 <- lm(Total~log(Population)+NOC, medal_count)
+summary(m3)
+residualPlots(m3)
+m4 <- lm(Total~lagT, medal_count)
+summary(m4)
+m5 <- lm(Total~lagT+lagT2, medal_count)
+summary(m5)
+m6 <- lm(Total~lagT2, medal_count)
+summary(m6)
+cor(medal_count$lagT2,medal_count$Total,use = "na.or.complete")
+cor(medal_count$lagT, medal_count$Total, use="na.or.complete")
+cor(medal_count$Total,medal_count$Population)
+```
+
+#Box-Cox Model Transformations
+
+```{r}
+BoxCoxTrans(medal_count$lagT+.001,na.rm = T)
+BoxCoxTrans(medal_count$lagT2+.001,na.rm = T)
+BoxCoxTrans(medal_count$Population)
+BoxCoxTrans(medal_count$Total+.001)
+
+m8 <- lm(log(Total+.0001)~log(Population)+NOC, medal_count)
+m9 <- lm(Total^.25~log(Population)+NOC, medal_count)
+m10 <- lm(Total^.25~NOC+lagT+lagT2+log(Population)+Year, medal_count)
+m11 <- lm(Total^.25~NOC+log(lagT+.001)+log(lagT2+.001)+log(Population), medal_count)
+m12 <- lm(Total^.25~NOC+lagT+lagT2+log(Population), medal_count)
+
+stargazer(m4, header = F, 
+          no.space = T, type="text")
+poponly <- ggplot() + geom_point(aes(m1$model$Total, residuals(m1))) + 
+  labs(x="Total Medals", 
+       title = "Population Only Model Residuals vs Total Medals",
+       y="Population Only Model Residuals")
+fuller_model <- ggplot() + 
+  geom_point(aes(m4$model$Total, residuals(m4))) + 
+  labs(x="Total Medals", 
+       title = "Lag Model Residuals vs Total Medals",
+       y="Lag Only Model Residuals")
+```
+
+
+#Residuals Diagnostics
+
+```{r}
+#residuals diagnostics
+ggplot() + geom_point(aes(log(medal_count$Population), residuals(m8))) + 
+  labs(x="Log(Population)", 
+       title = "Full Model Residuals vs Log(Population)",
+       y="Full Model Residuals")
+ggplot() + geom_point(aes((medal_count$Total), residuals(m8))) + 
+  labs(x="Total Medals", 
+       title = "Full Model Residuals vs Total Medals",
+       y="Full Model Residuals")
+ggplot() + geom_point(aes(medal_count$Total, residuals(m3))) + 
+  labs(x="Total Medals", 
+       title = "Country Only Model Residuals vs Total Medals",
+       y="Population Only Model Residuals")
+
+
+qqnorm(residuals(m8))
+qqline(residuals(m8))
+qqnorm(residuals(m10))
+qqline(residuals(m10))
+```
+
+
+#AIC
+
+```{r}
+AICs <- data.frame(name=c("m1","m2","m3","m4","m5","m6","m7","m8","m9","m10","m11","m12","m13","m14","m15","m16","m17"))
+calls <- c()
+AICss <- c()
+for(i in list(m1,m2,m3,m4,m5,m6,m7,m8,m9,m10,m11,m12,m13,m14,m15,m16,m17)){
+  calls <- (c(calls,i$call[2]))
+  AICss = c(AICss, AIC(i))
+
+}
+AICs$AIC <- AICss
+AICs$calls <- as.character(calls)
+AICs
+```
+
+
+#Final Model
+
+```{r}
+m17 <- lm(Total^.25~NOC+lagT+lagT2+log(Population), train_set)
+m15 <- lm(Total^.25~NOC+lagT+lagT2+log(Population)+Year, train_set)
+m16 <- lm(Total^.25~NOC+log(lagT+.001)+log(lagT2+.001)+log(Population), train_set)
+observations_count <- nrow(medal_count)
+train_number <- round(observations_count*.8)
+test_number <- observations_count-train_number
+select_set <- sample(observations_count, train_number)
+train_set <- medal_count[select_set,]
+test_set <- medal_count[-select_set,]
+m15_predict <- predict(m15,newdata = test_set)
+m16_predict <- predict(m16,newdata = test_set)
+m17_predict <- predict(m17,newdata = test_set)
+mean((test_set$Total[!is.na(m15_predict)]-m15_predict[!is.na(m15_predict)])^2)
+mean((test_set$Total[!is.na(m16_predict)]-m16_predict[!is.na(m16_predict)])^2)
+mean((test_set$Total[!is.na(m17_predict)]-m17_predict[!is.na(m17_predict)])^2)
+predict(m16, newdata=test_set)
+predict(m17, newdata=test_set)
+summary(m16)
+step(m15, direction = "both")
+step(m16, direction = "both")
+step(m17, direction="both")
+
+residualPlots(m16)
+anova(m15,m16)
+```
+

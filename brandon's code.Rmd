@@ -1,0 +1,301 @@
+---
+title: "Olympics Data"
+author: "Brandon"
+date: "11/27/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(car)
+library(AER)
+library(ggplot2)
+library(broom)
+library(stargazer)
+library(rsq) 
+library(foreign)
+library(gmodels)
+library(pROC)
+library(readxl)
+library(anchors)
+library(caret)
+```
+
+
+#Reading in data and separating into before 1950 and after 1950
+```{r}
+olymp <- read_csv('athlete_events.csv')
+olymp1950b <- olymp %>% filter(Year < 1950)
+olymp1950a <- olymp %>% filter(Year > 1950)
+```
+
+
+#Graphing for Exploratory analysis
+```{r}
+summary(olymp)
+
+ggplot(olymp1950b) +
+  geom_boxplot(aes(x = olymp1950b$Sex, y = olymp1950b$Age)) +
+  xlab('Sex') +
+  ylab("Age")+
+  ggtitle("Boxplot for Age (before 1950)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(olymp1950a) +
+  geom_boxplot(aes(x = olymp1950a$Sex, y = olymp1950a$Age)) +
+  xlab('Sex') +
+  ylab("Age")+
+  ggtitle("Boxplot for Age (after 1950)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+
+ggplot(olymp1950b) +
+  geom_boxplot(aes(x = olymp1950b$Sex, y = olymp1950b$Height)) +
+  xlab('Sex') +
+  ylab("Height")+
+  ggtitle("Boxplot for Height (before 1950)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(olymp1950a) +
+  geom_boxplot(aes(x = olymp1950a$Sex, y = olymp1950a$Height)) +
+  xlab('Sex') +
+  ylab("Height")+
+  ggtitle("Boxplot for Height (after 1950)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+
+ggplot(olymp1950b) +
+  geom_boxplot(aes(x = olymp1950b$Sex, y = olymp1950b$Weight)) +
+  xlab('Sex') +
+  ylab("Weight")+
+  ggtitle("Boxplot for Weight (kg) before 1950") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(olymp1950a) +
+  geom_boxplot(aes(x = olymp1950a$Sex, y = olymp1950a$Weight)) +
+  xlab('Sex') +
+  ylab("Weight")+
+  ggtitle("Boxplot for Weight (kg) after 1950") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+```{r}
+olymp$medalled <- ifelse(!is.na(olymp$Medal), 1, 0)
+```
+
+
+#Proportion of medals for top 15 countries
+```{r}
+means_olymp <- olymp %>% group_by(NOC) %>% summarise(medals = mean(medalled)) %>% arrange(desc(medals))
+
+ggplot(data = means_olymp[1:15,]) +
+  geom_bar(aes(x= reorder(NOC, -medals),y=medals), stat = "identity") +
+  xlab('Country') +
+  ylab("Proportion of Medals")+
+  ggtitle("Proportion of Medals for Top 15 Countries") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5))
+  
+```
+
+#For summer olympics
+```{r}
+means_olymp_summer_1991 <- olymp %>% filter(Season == 'Summer', Year > 1991) %>% group_by(NOC) %>% summarise(medals = mean(medalled)) %>% arrange(desc(medals))
+means_olymp_summer_1991
+
+
+```
+
+```{r}
+ggplot(data = means_olymp_summer_1991[1:15,]) +
+  geom_bar(aes(x= reorder(NOC, -medals),y=medals), stat = "identity") +
+  xlab('Country') +
+  ylab("Proportion of Medals")+
+  ggtitle("Proportion of Summer Olympic Medals for Top 15 Countries after 1991") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5))
+```
+
+
+
+#For winter olympics 
+```{r}
+means_olymp_winter <- olymp %>% filter(Season == 'Winter') %>% group_by(NOC) %>% summarise(medals = mean(medalled)) %>% arrange(desc(medals))
+```
+
+```{r}
+ggplot(data = means_olymp_winter[1:10,]) +
+  geom_bar(aes(x= reorder(NOC, -medals),y=medals), stat = "identity") +
+  xlab('Country') +
+  ylab("Proportion of Medals")+
+  ggtitle("Proportion of Winter Olympic Medals for Top 10 Countries ") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+Men's basketball
+```{r}
+menbball <- olymp %>% filter(Sport == 'Basketball', Sex == 'M')
+menbball_medal <- menbball %>% group_by(NOC) %>% summarise(medals = mean(medalled)) %>% arrange(desc(medals))
+
+```
+
+```{r}
+ggplot(data = menbball_medal[1:15,]) +
+  geom_bar(aes(x= reorder(NOC, -medals),y=medals/sum(medals)), stat = "identity") +
+  xlab('Team') +
+  ylab('Percent of Medals') +
+  ggtitle("Percent of Men's Basketball Olympic Medals Won for Top 15 Countries") +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5))
+```
+
+Women's basketball
+```{r}
+womenbball <- olymp %>% filter(Sport == 'Basketball', Sex == 'F')
+womenbball_medal <- womenbball %>% group_by(NOC) %>% summarise(medals = mean(medalled)) %>% arrange(desc(medals))
+womenbball_medal
+```
+
+```{r}
+ggplot(data = womenbball_medal[1:15,]) +
+  geom_bar(aes(x= reorder(NOC, -medals),y=medals/sum(medals)), stat = "identity") +
+  xlab('Team') +
+  ylab('Percent of Medals') +
+  ggtitle("Percent of Women's Basketball Olympic Medals Won for Top 15 Countries") +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5))
+```
+
+logit for men basketball
+```{r}
+menbball_logit <- glm(medalled ~ Team, data = menbball, family = binomial(link = "logit"))
+
+roc1 <- roc(menbball$medalled, predict(menbball_logit, type = "response"))
+plot(roc1)
+roc1
+
+menbball_pred <- predict(menbball_logit, type="response")
+menbball_df <- data.frame(menbball$medalled, pred = ifelse(menbball_pred > 0.5, 1, 0))
+
+confusionMatrix(factor(menbball_df$pred), factor(menbball_df$menbball.medalled))
+options(scipen=999)
+
+```
+
+logit for women bball 
+```{r}
+womenbball_logit <- glm(medalled ~ Team, data = womenbball, family = binomial(link = "logit"))
+
+roc1 <- roc(womenbball$medalled, predict(womenbball_logit, type = "response"))
+plot(roc1)
+roc1
+
+womenbball_pred <- predict(womenbball_logit, type="response")
+womenbball_df <- data.frame(womenbball$medalled, pred = ifelse(womenbball_pred > 0.5, 1, 0))
+
+confusionMatrix(factor(womenbball_df$pred), factor(womenbball_df$womenbball.medalled))
+```
+
+logit for men sailing
+```{r}
+mensailing <- olymp %>% filter(Sport == 'Sailing', Sex == 'M')
+
+mensailing_logit <- glm(medalled ~ Team, data = mensailing, family = binomial(link = "logit"))
+
+roc3 <- roc(mensailing$medalled, predict(mensailing_logit, type = "response"))
+plot(roc3)
+roc3
+
+mensailing_pred <- predict(mensailing_logit, type="response")
+mensailing_df <- data.frame(mensailing$medalled, pred = ifelse(mensailing_pred > 0.5, 1, 0))
+
+confusionMatrix(factor(mensailing_df$pred), factor(mensailing_df$mensailing.medalled))
+
+```
+
+logit for women sailing
+```{r}
+womensailing <- olymp %>% filter(Sport == 'Sailing', Sex == 'F')
+
+womensailing_logit <- glm(medalled ~ Team, data = womensailing, family = binomial(link = "logit"))
+
+roc3 <- roc(womensailing$medalled, predict(womensailing_logit, type = "response"))
+plot(roc3)
+roc3
+
+womensailing_pred <- predict(womensailing_logit, type="response")
+womensailing_df <- data.frame(womensailing$medalled, pred = ifelse(womensailing_pred > 0.5, 1, 0))
+
+confusionMatrix(factor(womensailing_df$pred), factor(womensailing_df$womensailing.medalled))
+
+```
+
+
+
+
+
+#Effect of GDP on Medals
+```{r}
+gdp <- read_csv('gdppercapita.csv')
+olymp <- left_join(olymp, gdp, by = c("Team" = "Country Name"))
+colnames(olymp)[which(names(olymp) == 2017)] <- "GDPperCapita"
+
+#Focusing on 2016 since GDP data is 2017
+olymp2016 <- olymp %>% filter(Year == 2016)
+
+group2016 <- olymp2016 %>% group_by(Team, NOC) %>% summarise(medals = sum(medalled))
+group2016 <- left_join(group2016, gdp, by = c("Team" = "Country Name"))
+
+colnames(group2016)[which(names(group2016) == 2017)] <- "GDPperCapita"
+group2016 <- group2016 %>% filter(!is.na(GDPperCapita))
+
+group2016_2 <- group2016 %>% group_by(NOC) %>% summarise(medals = sum(medals), GDPperCapita = sum(GDPperCapita, na.rm = TRUE))
+
+group2016_2 <- group2016_2 %>% subset(GDPperCapita != 0)
+
+
+m1 <- lm(medals ~ GDPperCapita, data = group2016_2)
+summary(m1)
+residualPlots(m1)
+
+#Graphing relationship
+ggplot(group2016_2, aes(GDPperCapita, medals)) +
+  geom_point() +
+   geom_smooth(method='lm',formula=y~x) +
+  xlab('GDP per Capita') +
+  ylab('Total medals') +
+  ggtitle("GDP/Capita vs Total medals in 2016") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+
+#GDP on medals logistic regression
+```{r}
+
+olymp2016_logit <- glm(medalled ~ GDPperCapita, olymp2016, family = binomial(link = "logit"))
+summary(olymp2016_logit)
+predict(olymp2016_logit, type = "response")
+
+roc4 <- roc(olymp2016$medalled, predict(olymp2016_logit, olymp2016,type = "response"))
+plot(roc4)
+roc4
+
+
+olymp2016_pred <- predict(olymp2016_logit, olymp2016, type="response")
+olymp2016_pred_df <- data.frame(olymp2016_pred)
+olymp2016_df <- data.frame(olymp2016$medalled, pred = ifelse(olymp2016_pred > 0.50, 1, 0))
+
+olymp2016_df <- olymp2016_df %>% filter(!is.na(pred))
+confusionMatrix(factor(olymp2016_df$pred), factor(olymp2016_df$olymp2016.medalled))
+
+
+```
+
+
+
